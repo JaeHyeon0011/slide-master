@@ -5,7 +5,7 @@
 [![Canvas](https://img.shields.io/badge/canvas-16%3A9%20기본%20%C2%B7%20세로형%C2%B7SNS%20포맷%20지원-4633E3)](.claude/skills/ppt-master/references/canvas-formats.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> 이 저장소는 [hugohe3/ppt-master](https://github.com/hugohe3/ppt-master)(MIT)를 기반으로 한 **장피엠 커스터마이즈 워크스페이스**입니다. 한국어 덱 제작에 맞춰 작업 절차 커스터마이징, 완료 PPTX 검증 워크플로우) 등이 조정·추가되어 있습니다. 원 프로젝트의 라이선스와 저작권 고지는 그대로 유지합니다.
+> **계보**: [hugohe3/ppt-master](https://github.com/hugohe3/ppt-master)(MIT, © Hugo He)에서 출발해, 한국어 덱 제작에 맞춰 작업 절차와 완료 PPTX 검증 워크플로우를 조정한 **장피엠 커스터마이즈 워크스페이스**([byungjunjang/slide-master](https://github.com/byungjunjang/slide-master))를 거쳐 갈라져 나온 포크입니다. 그 위에 API 키 없이 브라우저로 이미지를 만드는 [`gemini-web-image`](.claude/skills/gemini-web-image/SKILL.md) 경로, 논문 발표용 paper-explainer 모드, 윈도우 설치 절차 정비가 더해져 있습니다. 원 프로젝트의 라이선스와 저작권 고지는 그대로 유지합니다.
 
 ---
 
@@ -235,7 +235,7 @@ sources/회사표준템플릿.pptx 디자인 그대로 쓰고,
 
 ## 라이선스
 
-[MIT](LICENSE). 이 저장소는 [hugohe3/ppt-master](https://github.com/hugohe3/ppt-master) (MIT, Copyright © Hugo He)의 포크이며, 원 프로젝트의 라이선스 전문과 저작권 고지를 유지합니다. 아이콘·폰트 등 번들 자산은 각자의 라이선스(SIL OFL 등)를 따릅니다.
+[MIT](LICENSE). 이 저장소는 [hugohe3/ppt-master](https://github.com/hugohe3/ppt-master) (MIT, Copyright © Hugo He)에서 파생되었고, 직접적으로는 [byungjunjang/slide-master](https://github.com/byungjunjang/slide-master)의 포크입니다. 원 프로젝트의 라이선스 전문과 저작권 고지를 유지합니다. 아이콘·폰트 등 번들 자산은 각자의 라이선스(SIL OFL 등)를 따릅니다.
 
 외부 저장소에서 가져와 개작한 스킬은 각 디렉토리에 업스트림 라이선스 전문을 동봉합니다.
 
