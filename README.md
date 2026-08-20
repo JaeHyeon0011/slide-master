@@ -48,6 +48,22 @@ projects/<프로젝트>/svg_final/                        ← 브라우저로 �
 
 ---
 
+## 이 포크에서 더한 것
+
+[상위 워크스페이스](https://github.com/byungjunjang/slide-master)에서 갈라져 나온 뒤 얹은 변경입니다. 아래 세 가지를 빼면 동작은 그대로입니다.
+
+| 더한 것 | 무엇이 달라지나 |
+|---|---|
+| **Gemini 웹 이미지 경로**<br>[`gemini-web-image`](.claude/skills/gemini-web-image/SKILL.md) | ChatGPT 유료 플랜도 API 키도 없이, 로그인된 브라우저의 Gemini 세션으로 덱 이미지를 만듭니다. 전략 확인 화면에서 **Gemini 웹 전용**을 직접 고르거나, **자동 선택**에 맡기면 `codex → Gemini 웹 → API → 웹 검색/직접 업로드` 순으로 내려갑니다 |
+| **논문 발표 모드**<br>`paper-explainer` | 서사 골격에 여섯 번째 모드가 붙었습니다. 논문을 읽지 않은 청중을 상대로 그 논문의 질문·설계·근거·저자 해석을 재구성하고, 논문 자체 figure와 새로 생성한 모식도를 나란히 배치합니다. 분야 개론이나 비평이 아니라 그 한 편의 설명입니다 |
+| **윈도우 설치 절차 정비**<br>[설치 가이드](docs/windows-installation.md) | Pretendard 설치, `python3` 명령 해결, `preflight.py` 검증, Claude Code 실행, Gemini 웹 경로 준비까지 9단계로 다시 썼습니다 |
+
+Gemini 웹 경로는 기존 `image_prompts.json` 계약을 그대로 지키기 때문에 **이후 파이프라인 단계는 하나도 달라지지 않습니다**. 이미지를 한 장씩 순서대로 기다리는 대신 행마다 독립된 탭을 잡아 전부 제출한 뒤 한꺼번에 회수하고, 브라우저가 허용하면 원본 크기로, 막히면 화면 크기로 내려받습니다. 실패했을 때 조용히 품질을 떨어뜨리지 않고 어느 행이 왜 멈췄는지 보고하는 것도 이 경로의 규칙입니다. 준비물과 제약은 [설치 가이드 9단계](docs/windows-installation.md#step-9--optional-gemini-web-image-path-kimi-webbridge)에 정리해 두었습니다.
+
+> 키 없는 이미지 경로로 Antigravity(agy) CLI 백엔드를 먼저 붙였다가 브라우저 경로로 대체했습니다. 그 판단의 근거는 [조사 기록](docs/agy-image-backend-investigation.md)에 남아 있습니다.
+
+---
+
 ## 어떻게 동작하나요?
 
 ```
@@ -221,6 +237,7 @@ sources/회사표준템플릿.pptx 디자인 그대로 쓰고,
 | 🎨 | [Templates Guide](docs/templates-guide.md) | 브랜드/레이아웃/덱 템플릿 만들고 쓰기 |
 | 🔊 | [Audio Narration](docs/audio-narration.md) | 음성 나레이션·자동 넘김 덱 만들기 |
 | 📖 | [SKILL.md](.claude/skills/ppt-master/SKILL.md) | 핵심 워크플로우 규칙 (AI가 따르는 절차 원문) |
+| 🧪 | [agy 이미지 백엔드 조사](docs/agy-image-backend-investigation.md) | 키 없는 이미지 경로를 agy에서 브라우저로 옮긴 과정과 근거 (설계 기록) |
 
 ---
 
