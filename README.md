@@ -86,7 +86,7 @@ projects/<프로젝트>/svg_final/                        ← 브라우저로 �
 **3단계 — 저장소 받기 + 의존성 설치**
 
 ```bash
-git clone https://github.com/byungjunjang/slide-master.git
+git clone https://github.com/JaeHyeon0011/slide-master.git
 cd slide-master
 pip install -r requirements.txt
 ```
