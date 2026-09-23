@@ -8,8 +8,8 @@ import re
 import sys
 from pathlib import Path
 
-# "No find_tab, ever" and "no find_tab anywhere" are negations, and three plans
-# were failed for writing them that way. \bno\b does not match "not"/"nothing",
+# "Never open tabs that way" and "no background tabs" are negations, and plans
+# have been failed for writing prohibitions like that. \bno\b does not match "not"/"nothing",
 # so the bare quantifier can be added without swallowing unrelated prose.
 NEGATION = re.compile(
     r"never|\bno\b|not use|don't|do not|avoid|forbidden|instead of|rather than"
@@ -18,7 +18,7 @@ NEGATION = re.compile(
 # Plans are markdown. Emphasis lands mid-phrase ("do **not** use", "Submits
 # **all** rows first") and split every phrase match until it was stripped.
 # Underscores are deliberately kept: stripping them turned RATIO_PREFIX into
-# RATIOPREFIX and Gemini_Generated_Image into GeminiGeneratedImage, so every
+# RATIOPREFIX and gemini_web_image into geminiwebimage, so every
 # check that named a snake_case identifier could never fire. Four plans that
 # quoted those identifiers exactly were scored as failures on that alone.
 MARKUP = re.compile(r"[*`]+")
@@ -89,133 +89,145 @@ def lines_with(text, needle):
     return [ln for ln in contextual_lines(text) if needle.lower() in ln.lower()]
 
 
-def b1_no_find_tab(text, sid):
-    """find_tab must never appear as an action — it silently fails to switch."""
-    hits = lines_with(text, "find_tab")
-    if not hits:
-        return True
-    return all(NEGATION.search(ln) for ln in hits)
+def negated(line):
+    return bool(NEGATION.search(line))
 
 
-def b2_download_first(text, sid):
-    """The original file is worth one attempt before reading the rendered copy."""
-    if sid == "S3":
+def any_line(text, pattern):
+    return any(re.search(pattern, ln, re.I) for ln in contextual_lines(text))
+
+
+def c1_runs_script(text, sid):
+    if sid not in ("S1", "S2"):
         return None
-    return bool(re.search(
-        r"원본 크기 이미지 다운로드|download (?:control|button)|Gemini_Generated_Image",
-        flatten(text), re.I))
+    return bool(re.search(r"gemini_web_image\.py\s+(?:\\\s*)?--manifest", flatten(text)))
 
 
-def b8_force_decode(text, sid):
-    """naturalWidth 0 is an undecoded image, not a dead conversation.
+def c2_warns_tab_switching(text, sid):
+    # The Aside window moves on every send and download. A user who is not told
+    # clicks into it mid-run.
+    if sid != "S1":
+        return None
+    return any_line(text, r"(switch|jump|flip|come to the front|brought? (?:to the )?front|앞으로|전환).{0,60}"
+                          r"(tab|window|탭|창)|(tab|window|탭|창).{0,60}(switch|front|전환|앞으로)")
 
-    Scrolling alone was the old remedy and it does not work: the result element
-    is routinely laid out at zero size, where scrollIntoView is a no-op. A plan
-    that only says "scroll it into view" is repeating the superseded advice, so
-    the eager/decode remedy is what earns the point; the lazy vocabulary alone
-    no longer does.
-    """
-    if sid in {"S3", "S6"}:
+
+def c3_verifies_output(text, sid):
+    if sid != "S1":
         return None
     flat = flatten(text)
-    # "force the decode" names the same remedy without quoting the two calls,
-    # and it is still incompatible with the superseded "scroll it into view".
-    return bool(re.search(
-        r"loading\s*=\s*['\"]?eager|\.decode\(\)|eager"
-        r"|forc\w*\s+the\s+decode|디코드를?\s*강제",
-        flat, re.I))
+    return (bool(re.search(r"sha-?256|shasum|checksum", flat, re.I))
+            and "1024" in flat)
 
 
-def b3_click_unproven(text, sid):
-    """A click that reports success proves nothing; the file's arrival does."""
-    if sid == "S3":
+def c4_leaves_finished_and_manual_rows(text, sid):
+    if sid != "S2":
         return None
-    flat = flatten(text)
-    return bool(re.search(
-        r"canvas|toDataURL|drawImage|fall (?:back|through)|fallback|대체 ?경로",
-        flat, re.I)) and bool(re.search(
-        r"~/Downloads|file .{0,30}(?:lands|arriv)|아무 ?것도 ?안|파일이 ?(?:안|도착)",
-        flat, re.I))
+    manual = [ln for ln in lines_with(text, "Needs-Manual")]
+    touched = any(re.search(r"\b(submit|send|generate|reset|set .{0,20}(Pending|Failed))\b", ln, re.I)
+                  and not negated(ln) for ln in manual)
+    return bool(manual) and not touched and bool(re.search(r"\b4\b|four", flatten(text), re.I))
 
 
-def b4_session_per_row(text, sid):
-    """One bridge session per row is what pins a tab to a row."""
-    if sid == "S3":
-        return None
-    return bool(re.search(
-        r"one session per row|session per (?:row|image|slot)|ppt-master-image-"
-        r"|slot_name|세션.{0,10}(?:하나|당|per)|슬롯", flatten(text), re.I))
-
-
-def b10_recorded_slot(text, sid):
-    """A slot recomputed at collect time points at another row's tab."""
-    if sid not in {"S2", "S7"}:
-        return None
-    flat = flatten(text)
-    # Either the plan follows the rule (use the slot written down at submit
-    # time) or it names the hazard (recomputing slots at collect time points a
-    # row at another row's tab). Both show the same understanding.
-    follows = re.search(
-        r"recorded slot|slot.{0,25}(?:written|recorded|persisted|manifest)"
-        r"|item\[.slot.\]", flat, re.I)
-    spots = any(
-        re.search(r"collect[- ]?only", ln, re.I)
-        and re.search(r"enumerat|index 0|slot_name\(0\)|re-?number", ln, re.I)
-        for ln in logical_lines(text))
-    return bool(follows or spots)
-
-
-def b9_no_slot_navigation(text, sid):
-    """Re-opening a slot's conversation is what breaks this path."""
-    if sid == "S3":
-        return None
-    flat = flatten(text)
-    return bool(re.search(
-        r"n(?:ever|o|ot) [^.]{0,40}(?:navigat|reload|re-open|re-?fetch)"
-        r"|without (?:re-?load|navigating)"
-        r"|이동하지|새로고침하지|재방문하지", flat, re.I))
-
-
-def b5_ratio_line(text, sid):
-    # Only scenarios that actually submit a prompt can carry the ratio line.
-    if sid in {"S3", "S5", "S6", "S7"}:
-        return None
-    return bool(re.search(r"aspect ratio exactly|RATIO_PREFIX|비율.{0,12}첫 ?줄",
-                          flatten(text), re.I))
-
-
-def b7_precondition_stop(text, sid):
+def c5_precondition_stop(text, sid):
     if sid != "S3":
         return None
     flat = flatten(text)
-    stops = re.search(r"stop|halt|abort|report .{0,30}(?:precondition|failure)"
-                      r"|중단|보고", flat, re.I)
-    # The skill's own error string tells the user to start the daemon, so a plan
-    # that quotes it is not improvising. Only an unquoted action counts.
-    # A plan that repeats the skill's own error text is not improvising. Quoted
-    # lines, blockquotes, and lines attributing the words to the skill or script
-    # all read as citation.
-    quoted = re.compile(
-        r"^\s*>|[\"\u201c\u201d]|message|raises|error string|report"
-        r"|the (?:skill|script|adapter) (?:says|states|prints|reports)"
-        r"|remedy|guidance|wording", re.I)
-    improvises = any(
-        re.search(r"start the daemon|launch the daemon|brew install|npm install", ln, re.I)
-        and not quoted.search(ln)
-        for ln in logical_lines(text))
-    return bool(stops) and not improvises
+    stops = re.search(r"stop|halt|abort|중단", flat, re.I)
+    # Falling back to another image path is the caller's decision. A plan that
+    # reaches for image_gen.py or codex from inside this skill is improvising.
+    improvises = any(re.search(r"image_gen\.py|codex|kimi|webbridge", ln, re.I)
+                     and not negated(ln)
+                     and not re.search(r"caller|hand (?:it )?back|decision|ppt-master", ln, re.I)
+                     for ln in contextual_lines(text))
+    names_it = re.search(r"install|aside cli|releases\.aside\.com", flat, re.I)
+    return bool(stops) and bool(names_it) and not improvises
+
+
+def c6_no_double_ratio(text, sid):
+    if sid != "S4":
+        return None
+    # Row 2 must go through as-is (the script sees the line and adds nothing);
+    # row 3 is a manifest error the plan must surface, not a line to add again.
+    adds_again = any(re.search(r"(prepend|add|insert).{0,40}(ratio line|Generate a)", ln, re.I)
+                     and re.search(r"row 2|second row", ln, re.I)
+                     and not negated(ln) for ln in contextual_lines(text))
+    flags_row3 = any_line(text, r"(row 3|third row).{0,120}(conflict|mismatch|contradict|wrong|1:1)"
+                                r"|(conflict|mismatch|contradict).{0,120}(row 3|third row)")
+    return flags_row3 and not adds_again
+
+
+def c7_reads_repl_limit(text, sid):
+    if sid != "S5":
+        return None
+    flat = flatten(text)
+    knows = re.search(r"120\s?s|120[- ]second", flat, re.I)
+    acts = re.search(r"--batch|smaller batch|lower .{0,20}batch|batch .{0,20}(2|two|3|three)", flat, re.I)
+    reinstall = any(re.search(r"reinstall|install\.sh|install\.ps1|restart (?:the )?aside", ln, re.I)
+                    and not negated(ln) for ln in contextual_lines(text))
+    return bool(knows) and bool(acts) and not reinstall
+
+
+def c8_challenge_by_hand(text, sid):
+    if sid != "S6":
+        return None
+    flat = " ".join(logical_lines(text))
+    hands_off = re.search(r"(user|person|by hand|manually|사람|직접).{0,80}(clear|solve|pass|complete|풀)", flat, re.I) \
+        or re.search(r"(clear|solve).{0,60}(by hand|manually|the user|a person|a human|themselves)", flat, re.I)
+    # A line addressed to the user ("Please open the browser and solve it") hands
+    # the challenge over; it is not the agent solving it.
+    solves = any(re.search(r"(click|solve|answer|complete).{0,30}(captcha|checkbox|challenge|recaptcha)", ln, re.I)
+                 and not negated(ln)
+                 and not re.search(r"user|person|human|by hand|manually|themselves|please|\byou\b|^\s*>", ln, re.I)
+                 for ln in contextual_lines(text))
+    reruns = re.search(r"rerun|re-run|run .{0,20}again", flat, re.I)
+    return bool(hands_off) and bool(reruns) and not solves
+
+
+def c9_keeps_focus_rule(text, sid):
+    if sid != "S7":
+        return None
+    flat = " ".join(logical_lines(text))
+    explains = re.search(r"(background).{0,160}(1 of 4|one of four|same file|same (?:image|result|checksum)|wrong|another tab|didn't|did not|doesn't|does not)", flat, re.I) \
+        or re.search(r"(front|focus).{0,160}(both|send .{0,20}download|submit .{0,20}download)", flat, re.I)
+    # Restating the user's request, asking it as a heading, or quoting the rule
+    # that brings tabs forward is not agreeing to it.
+    complies = any(re.search(r"(submit|send|download).{0,40}background", ln, re.I)
+                   and not negated(ln)
+                   and not ln.rstrip().endswith("?")
+                   and not re.search(r"\b(forward|front)\b", ln, re.I)
+                   and not re.search(r"1 of 4|same|wrong|fail|broke|why|because"
+                                     r"|user (?:says|asks)|they ask|ask(?:s|ed)? to|request", ln, re.I)
+                   for ln in contextual_lines(text))
+    return bool(explains) and not complies
+
+
+CLI_TAB = re.compile(r"aside\s+[\"']https?://", re.I)
+
+
+def c10_no_cli_tabs(text, sid):
+    # Tabs opened with `aside "<url>"` cannot be closed from the REPL. Any plan
+    # that mentions opening them must be saying not to.
+    hits = [ln for ln in contextual_lines(text) if CLI_TAB.search(ln)]
+    if sid != "S7" and not hits:
+        return None
+    if sid == "S7" and not hits:
+        return any_line(text, r"openTab|cannot be closed|can't be closed|stay open|left open")
+    return all(negated(ln) or re.search(r"cannot be closed|can't be closed|stays?|left open|user asked|you asked", ln, re.I)
+               for ln in hits)
 
 
 BINARY = [
-    ("B1_no_find_tab", b1_no_find_tab),
-    ("B2_download_first", b2_download_first),
-    ("B3_click_unproven", b3_click_unproven),
-    ("B4_session_per_row", b4_session_per_row),
-    ("B5_ratio_in_prompt", b5_ratio_line),
-    ("B7_precondition_stop", b7_precondition_stop),
-    ("B8_force_decode", b8_force_decode),
-    ("B9_no_slot_navigation", b9_no_slot_navigation),
-    ("B10_recorded_slot", b10_recorded_slot),
+    ("C1_runs_script", c1_runs_script),
+    ("C2_warns_tab_switching", c2_warns_tab_switching),
+    ("C3_verifies_output", c3_verifies_output),
+    ("C4_leaves_finished_and_manual_rows", c4_leaves_finished_and_manual_rows),
+    ("C5_precondition_stop", c5_precondition_stop),
+    ("C6_no_double_ratio", c6_no_double_ratio),
+    ("C7_reads_repl_limit", c7_reads_repl_limit),
+    ("C8_challenge_by_hand", c8_challenge_by_hand),
+    ("C9_keeps_focus_rule", c9_keeps_focus_rule),
+    ("C10_no_cli_tabs", c10_no_cli_tabs),
 ]
 
 

@@ -54,11 +54,11 @@ projects/<프로젝트>/svg_final/                        ← 브라우저로 �
 
 | 더한 것 | 무엇이 달라지나 |
 |---|---|
-| **Gemini 웹 이미지 경로**<br>[`gemini-web-image`](.claude/skills/gemini-web-image/SKILL.md) | ChatGPT 유료 플랜도 API 키도 없이, 로그인된 브라우저의 Gemini 세션으로 덱 이미지를 만듭니다. 전략 확인 화면에서 **Gemini 웹 전용**을 직접 고르거나, **자동 선택**에 맡기면 `codex → Gemini 웹 → API → 웹 검색/직접 업로드` 순으로 내려갑니다 |
+| **Gemini 웹 이미지 경로**<br>[`gemini-web-image`](.claude/skills/gemini-web-image/SKILL.md) | ChatGPT 유료 플랜도 API 키도 없이, [Aside](https://aside.com) 브라우저에 로그인된 Gemini 세션으로 덱 이미지를 만듭니다. 맥·리눅스·윈도우(x64)에서 동작합니다. 전략 확인 화면에서 **Gemini 웹 전용**을 직접 고르거나, **자동 선택**에 맡기면 `codex → Gemini 웹 → API → 웹 검색/직접 업로드` 순으로 내려갑니다 |
 | **논문 발표 모드**<br>`paper-explainer` | 서사 골격에 여섯 번째 모드가 붙었습니다. 논문을 읽지 않은 청중을 상대로 그 논문의 질문·설계·근거·저자 해석을 재구성하고, 논문 자체 figure와 새로 생성한 모식도를 나란히 배치합니다. 분야 개론이나 비평이 아니라 그 한 편의 설명입니다 |
 | **윈도우 설치 절차 정비**<br>[설치 가이드](docs/windows-installation.md) | Pretendard 설치, `python3` 명령 해결, `preflight.py` 검증, Claude Code 실행, Gemini 웹 경로 준비까지 9단계로 다시 썼습니다 |
 
-Gemini 웹 경로는 기존 `image_prompts.json` 계약을 그대로 지키기 때문에 **이후 파이프라인 단계는 하나도 달라지지 않습니다**. 이미지를 한 장씩 순서대로 기다리는 대신 행마다 독립된 탭을 잡아 전부 제출한 뒤 한꺼번에 회수하고, 브라우저가 허용하면 원본 크기로, 막히면 화면 크기로 내려받습니다. 실패했을 때 조용히 품질을 떨어뜨리지 않고 어느 행이 왜 멈췄는지 보고하는 것도 이 경로의 규칙입니다. 준비물과 제약은 [설치 가이드 9단계](docs/windows-installation.md#step-9--optional-gemini-web-image-path-kimi-webbridge)에 정리해 두었습니다.
+Gemini 웹 경로는 기존 `image_prompts.json` 계약을 그대로 지키기 때문에 **이후 파이프라인 단계는 하나도 달라지지 않습니다**. `aside repl` 호출 한 번이 최대 4장을 묶어 처리합니다. 행마다 탭을 하나씩 열고, 제출과 다운로드는 한 장씩 차례로 하되 Gemini의 생성은 네 장이 동시에 진행되도록 겹칩니다. 모든 이미지는 원본 크기(16:9 기준 2752×1536)로 받으며, 호출이 끝나면 연 탭을 전부 닫습니다. 실패한 행은 같은 실행 안에서 한 번 더 시도하고, 그래도 안 되면 조용히 넘어가지 않고 어느 행이 왜 멈췄는지 `last_error`에 남깁니다. 준비물과 제약은 [설치 가이드 9단계](docs/windows-installation.md#step-9--optional-gemini-web-image-path-aside)에 정리해 두었습니다.
 
 > 키 없는 이미지 경로로 Antigravity(agy) CLI 백엔드를 먼저 붙였다가 브라우저 경로로 대체했습니다. 그 판단의 근거는 [조사 기록](docs/agy-image-backend-investigation.md)에 남아 있습니다.
 
@@ -118,13 +118,15 @@ pip install -r requirements.txt
 npm install -g @openai/codex
 codex login
 
-# B) Gemini 웹 (API 키 불필요) — Gemini 구독 + 로그인된 브라우저
-#    Kimi WebBridge 데몬을 띄운 뒤 gemini-web-image 스킬로 실행
+# B) Gemini 웹 (API 키 불필요) — Gemini 구독 + Aside 브라우저
+#    macOS/Linux: curl -fsSL https://releases.aside.com/install.sh | bash
+#    Windows:     irm https://releases.aside.com/install.ps1 | iex
+#    Aside 앱을 열고 그 브라우저에서 Gemini에 로그인한 뒤 gemini-web-image 스킬로 실행
 
 # C) API 키 — 환경변수 또는 .env에 OPENAI_API_KEY / GEMINI_API_KEY 등
 ```
 
-> ChatGPT 유료 플랜이 없다면 **B**를 쓰면 됩니다. 브라우저의 Gemini 세션을 그대로 이용하며, 같은 `image_prompts.json` 계약을 지키므로 이후 단계는 달라지지 않습니다. 실행 규칙은 [`gemini-web-image`](.claude/skills/gemini-web-image/SKILL.md)에 있습니다.
+> ChatGPT 유료 플랜이 없다면 **B**를 쓰면 됩니다. Aside 브라우저의 Gemini 세션을 그대로 이용하며, 같은 `image_prompts.json` 계약을 지키므로 이후 단계는 달라지지 않습니다. 실행 규칙은 [`gemini-web-image`](.claude/skills/gemini-web-image/SKILL.md)에 있습니다.
 
 **5단계 (선택) — 수출 PPTX 검증 도구**
 

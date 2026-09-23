@@ -86,8 +86,8 @@ image path — `codex` needs the plan, and the `agy` (Antigravity CLI) backend w
 retired because its image allowance ran out after about eleven images per
 five-hour window. Use the
 [`gemini-web-image`](../../gemini-web-image/SKILL.md) skill instead; it drives
-the signed-in browser through the Kimi WebBridge daemon and honors this same
-manifest contract.
+the Gemini web app in the signed-in Aside browser (`aside repl`, macOS, Linux,
+and Windows x64) and honors this same manifest contract.
 
 ```bash
 python3 .claude/skills/gemini-web-image/scripts/gemini_web_image.py \

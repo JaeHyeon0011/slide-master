@@ -159,46 +159,39 @@ With Python, the dependencies, and the font installed, you already have everythi
 |-------------|-----------------|----------------|--------|
 | **Pandoc** — legacy document formats | You need to convert `.doc`, `.odt`, `.rtf`, `.tex`, `.rst`, `.org`, or `.typ`. `.docx`/`.html`/`.epub`/`.ipynb` work natively in Python. | Download `.msi` from [pandoc.org](https://pandoc.org/installing.html) | `pandoc --version` |
 | **OfficeCLI** — export verification | You want automated overflow and render checks on the exported deck. With PowerPoint installed, verification screenshots come from the real PowerPoint renderer, which is the most accurate option. | `npm install -g @officecli/officecli@1.0.135` (needs [Node.js](https://nodejs.org/)) | `officecli --version` |
-| **AI image generation** | Your decks need generated cover art or infographics. Photo and icon sourcing works without it. | Codex CLI or an API key — see the [main README](../README.md#설치-10분). For the keyless Gemini route, see [Step 9](#step-9--optional-gemini-web-image-path-kimi-webbridge). | `python .claude\skills\ppt-master\scripts\preflight.py --needs-images` |
+| **AI image generation** | Your decks need generated cover art or infographics. Photo and icon sourcing works without it. | Codex CLI or an API key — see the [main README](../README.md#설치-10분). For the keyless Gemini route, see [Step 9](#step-9--optional-gemini-web-image-path-aside). | `python .claude\skills\ppt-master\scripts\preflight.py --needs-images` |
 
 ---
 
-## Step 9 — Optional: Gemini Web Image Path (Kimi WebBridge)
+## Step 9 — Optional: Gemini Web Image Path (Aside)
 
-Skip this unless you want AI-generated images **without** a paid ChatGPT plan or an API key. This route drives the Gemini web app inside your own signed-in browser, so it needs a Gemini subscription instead.
+Skip this unless you want AI-generated images **without** a paid ChatGPT plan or an API key. This route drives the Gemini web app inside the [Aside](https://aside.com) browser, signed in to your own Google account, so it needs a Gemini subscription instead.
 
-**It works on Windows.** The daemon ships a native Windows binary, it attaches to Chrome or Edge through a browser extension, and the Korean prompts this project sends survive the trip — [`gemini_web_image.py`](../.claude/skills/gemini-web-image/scripts/gemini_web_image.py) posts every request as a UTF-8 file body rather than inline, which is exactly what avoids the Windows shell mangling non-ASCII text into `?`.
+**It works on Windows x64.** Aside ships a signed Windows CLI, and [`gemini_web_image.py`](../.claude/skills/gemini-web-image/scripts/gemini_web_image.py) passes each batch to it as a single argument without going through a shell and reads the reply as UTF-8, so Korean prompts are not mangled into `?`. It finds the page's prompt box and download button by page structure rather than by their labels, so the Gemini UI language does not matter.
 
-### 9a — Install the daemon
+### 9a — Install Aside
 
-1. Install Kimi WebBridge from **[kimi.com/features/webbridge](https://www.kimi.com/features/webbridge)** and connect the browser extension to Chrome or Edge when prompted.
+1. Install the Aside app from **[aside.com](https://aside.com)** if you have not already, open it, and leave it running.
 
-2. Start the daemon and confirm it is up:
-
-   ```powershell
-   & "$env:USERPROFILE\.kimi-webbridge\bin\kimi-webbridge.exe" start
-   & "$env:USERPROFILE\.kimi-webbridge\bin\kimi-webbridge.exe" status
-   ```
-
-   The status output should report the daemon running on `127.0.0.1:10086` with the extension connected. If `extension_connected` is false, open the extension in the browser and let it attach.
-
-3. Let the daemon install its own agent skill so Claude Code can start and recover it on its own:
+2. Install the Aside CLI in PowerShell and confirm it answers:
 
    ```powershell
-   & "$env:USERPROFILE\.kimi-webbridge\bin\kimi-webbridge.exe" install-skill
+   irm https://releases.aside.com/install.ps1 | iex
+   aside --version
    ```
 
-   > This skill lives outside the repository, so cloning Slide Master does not bring it along. The image path still runs without it — [`gemini_web_image.py`](../.claude/skills/gemini-web-image/scripts/gemini_web_image.py) talks to the daemon over plain HTTP — but installing it lets the agent restart a stopped daemon instead of stalling.
+   The installer puts `aside.exe` under `%LOCALAPPDATA%\Aside\CLI` and adds it to your user PATH. Open a **new** PowerShell window before `aside --version` so the PATH change is picked up. The image script also checks that folder directly, so it finds the CLI even from a shell opened before the install.
+
+3. In the **Aside browser** (not Chrome or Edge — Aside keeps its own profile), open `https://gemini.google.com/images` and sign in. The page should show a prompt box.
 
 ### 9b — Requirements checklist
 
 | Requirement | Why | How to check |
 |---|---|---|
-| `curl.exe` on PATH | The image script shells out to `curl` for every daemon call | `curl.exe --version` — bundled with Windows 10 1803+ and with Git for Windows |
-| Daemon running, extension attached | Nothing reaches the browser otherwise | `kimi-webbridge.exe status` |
-| Signed in to Gemini with an active subscription | The route uses your own session, not an API key | Open `gemini.google.com` and confirm the prompt box renders |
-| **Browser UI language set to Korean** | The skill locates page elements by their Korean accessible names (`Gemini 프롬프트 입력`, `메시지 보내기`, and three others). An English UI finds none of them | Check that the Gemini page chrome is in Korean |
-| Automatic downloads allowed for `gemini.google.com` (optional) | Images then arrive at original size; without it a canvas fallback finishes the run at displayed size | Browser site settings → Automatic downloads |
+| Windows x64 | The Aside CLI installer supports x64 only | `$env:PROCESSOR_ARCHITECTURE` prints `AMD64` |
+| Aside CLI on PATH | The image script runs `aside repl` for every batch | `aside --version` |
+| Aside app running | The CLI drives the Aside browser; with the app closed every call fails | The Aside window is open |
+| Signed in to Gemini **inside Aside**, with an active subscription | The route uses your own session, not an API key | Open `gemini.google.com/images` in Aside and confirm the prompt box renders |
 
 ### 9c — Run
 
@@ -208,7 +201,9 @@ The agent invokes this for you during a deck run. To drive it by hand:
 python .claude\skills\gemini-web-image\scripts\gemini_web_image.py --manifest projects\<name>\images\image_prompts.json
 ```
 
-> **Do not run `stop`, `restart`, or `uninstall` on the daemon while a deck run is in progress** — it kills the browser session mid-generation. `start` is safe to repeat; it no-ops when the daemon is already up.
+Rows go four at a time. While it runs, the Aside window switches between its tabs — every submission and download brings its tab to the front — so leave the window alone until the run prints its summary. Ten images take about four minutes.
+
+> This path was built and measured on macOS. The Windows-specific parts (CLI location, argument passing, UTF-8 output) are covered by the script's tests, but the first real Windows run is yours — if a batch fails, the row's `last_error` in `image_prompts.json` says why.
 
 ---
 
@@ -280,20 +275,28 @@ Python was installed for all users under `C:\Program Files`, so writing `python3
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
-### Gemini image generation reports "WebBridge is not answering"
+### Gemini image generation reports "Aside CLI not found"
 
-The daemon is not running or the extension detached. Start it and check status:
+The CLI is not installed or not on PATH. Install it and open a new PowerShell window:
 
 ```powershell
-& "$env:USERPROFILE\.kimi-webbridge\bin\kimi-webbridge.exe" start
-& "$env:USERPROFILE\.kimi-webbridge\bin\kimi-webbridge.exe" status
+irm https://releases.aside.com/install.ps1 | iex
+aside --version
 ```
 
-If status reports `extension_connected: false`, open the browser and let the Kimi extension attach. If the binary itself is missing, WebBridge was never installed — see [Step 9](#step-9--optional-gemini-web-image-path-kimi-webbridge). For anything still broken after a `start` and a retry, use the vendor help page at [kimi.com/features/webbridge](https://www.kimi.com/features/webbridge) rather than deep-troubleshooting the daemon.
+See [Step 9](#step-9--optional-gemini-web-image-path-aside).
 
-### Gemini image generation stalls without an error
+### Rows fail with "aside repl returned no result (Aside isn't running ...)"
 
-The most common cause is a **non-Korean browser UI**. The skill finds the prompt box and send button by their Korean accessible names, so an English or Chinese Gemini interface matches nothing and the run waits forever. Switch the browser's Gemini UI to Korean and rerun.
+Either the Aside app is closed, or one call ran past the CLI's 120-second limit — the CLI prints the same "isn't running" message for both. If the app is open, rerun with smaller batches:
+
+```powershell
+python .claude\skills\gemini-web-image\scripts\gemini_web_image.py --manifest projects\<name>\images\image_prompts.json --batch 2
+```
+
+### Rows fail with "prompt box never appeared at ..."
+
+Read the URL in the message. `google.com/sorry/...` is Google's unusual-traffic check and `accounts.google.com` means the Aside browser is signed out; clear either by hand in the Aside browser, then rerun. Finished rows are kept.
 
 ### preflight reports stale Codex stubs
 
@@ -310,6 +313,6 @@ python .claude\skills\ppt-master\scripts\sync_codex_stubs.py
 - 📖 [FAQ](./faq.md) and [Getting Started](./getting-started.md)
 - 🐛 Problems specific to this Korean workspace → ask whoever shared the repository with you (issue tracking is not enabled on this fork)
 - 🐛 Problems with the underlying pipeline → [upstream ppt-master issues](https://github.com/hugohe3/ppt-master/issues)
-- 🌐 Problems with the browser bridge → [kimi.com/features/webbridge](https://www.kimi.com/features/webbridge)
+- 🌐 Problems with the Aside browser or CLI → [aside.com](https://aside.com)
 
 When reporting, include your Python version, Windows version, the full error message, and the output of `python .claude\skills\ppt-master\scripts\preflight.py`.

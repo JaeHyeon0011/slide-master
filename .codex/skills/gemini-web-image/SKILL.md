@@ -2,11 +2,11 @@
 name: gemini-web-image
 description: >
   Generate an image_prompts.json manifest's ai rows through the Gemini web app,
-  driven by the Kimi WebBridge daemon and the user's signed-in browser. Use on a
-  host that has a Gemini subscription but no usable keyless CLI image path —
-  agy's image allowance is spent, or codex is unavailable. Do not use when
-  image_gen.py can run a CLI or API backend; those are faster and need no
-  browser.
+  driven by the Aside browser (`aside repl`) and the Gemini account it is signed
+  in to. Use on a host that has a Gemini subscription but no usable keyless CLI
+  image path — no ChatGPT plan for codex, or codex is unavailable. Works on
+  macOS, Linux, and Windows x64. Do not use when image_gen.py can run a CLI or
+  API backend; those need no browser.
 ---
 
 # gemini-web-image (Codex discovery stub)

@@ -474,7 +474,7 @@ C (AI-generated) resolves through one ladder — two automated engines, then two
 | Order | Path | Mechanism | Trigger |
 |---|---|---|---|
 | 1 | **Path A — subscription CLI** | `image_gen.py --manifest` with the keyless `codex` backend (Codex CLI, ChatGPT OAuth) | Default; always tried first |
-| 1b | **Path A2 — Gemini web** | [`gemini-web-image`](../../gemini-web-image/SKILL.md) drives the signed-in browser through the WebBridge daemon | Path A unavailable — no ChatGPT plan — and the host has a Gemini subscription |
+| 1b | **Path A2 — Gemini web** | [`gemini-web-image`](../../gemini-web-image/SKILL.md) drives the Gemini web app in the signed-in Aside browser (`aside repl`) | Path A unavailable — no ChatGPT plan — and the host has a Gemini subscription |
 | 2 | **Path B — API backend** | `image_gen.py --manifest` with an explicit `IMAGE_BACKEND` + provider API key | Only when a key is already configured; the lowest-priority generation engine |
 | 3 | **Web-sourcing switch** | Affected rows flip to `Acquire Via: web`; [`image-searcher.md`](./image-searcher.md) pipeline runs (keyless providers first) | Offered to the user when generation is unavailable |
 | 4 | **User-drop** | User places their chosen image files at `project/images/<filename>` | Terminal fallback |
@@ -488,14 +488,14 @@ C (AI-generated) resolves through one ladder — two automated engines, then two
    - `api` → Path B directly (requires `IMAGE_BACKEND` + key; unavailable → step 4).
    - Legacy `host-native` → treat as `auto`. Legacy `manual` → skip generation; go straight to the user-drop handoff below.
 1. **Path A (subscription CLI)** — run `image_gen.py --manifest` with `IMAGE_BACKEND` unset for the `codex` default. On failure, apply step 2 **before** falling through.
-1b. **Path A2 (Gemini web)** — when Path A cannot run because the host has no ChatGPT plan, and the browser is signed in to Gemini, hand the same manifest to [`gemini-web-image`](../../gemini-web-image/SKILL.md). It honors this manifest contract, so Step 6 is unaffected.
+1b. **Path A2 (Gemini web)** — when Path A cannot run because the host has no ChatGPT plan, and the Aside browser is signed in to Gemini, hand the same manifest to [`gemini-web-image`](../../gemini-web-image/SKILL.md). It honors this manifest contract, so Step 6 is unaffected.
 2. **Path A recovery — diagnose, guide, retry**:
 
    | Failure signature | Action |
    |---|---|
    | `Codex CLI not found` | Print in chat: install `npm install -g @openai/codex`, then `codex login` (ChatGPT OAuth). Ask the user to confirm; on confirmation rerun the same manifest (idempotent — only `Pending` / `Failed` rows re-run). |
-   | `Codex CLI not found` **and** no ChatGPT plan | Codex needs a paid plan, so installing it is not a fix. Offer Path A2 when the browser is signed in to Gemini; otherwise go to step 3. |
-   | WebBridge not answering (Path A2) | Print in chat: start the Kimi WebBridge daemon and confirm the browser extension is connected. Same confirm-then-rerun. |
+   | `Codex CLI not found` **and** no ChatGPT plan | Codex needs a paid plan, so installing it is not a fix. Offer Path A2 when the Aside browser is signed in to Gemini; otherwise go to step 3. |
+   | `Aside CLI not found` or `aside repl returned no result` (Path A2) | Print in chat: install the Aside CLI (`install.sh` on macOS/Linux, `install.ps1` on Windows), open the Aside app, and sign in to Gemini inside the Aside browser. Same confirm-then-rerun. |
    | auth / `401` / `login` | Print `codex login` guidance; same confirm-then-rerun. |
    | Transient (network / rate limit) | The CLI already retries once per item; if the run still fails, fall through. |
 
@@ -578,9 +578,10 @@ python3 .claude/skills/gemini-web-image/scripts/gemini_web_image.py \
   --manifest project/images/image_prompts.json
 ```
 
-Each row runs in its own WebBridge session, which pins one browser tab per row:
-the batch is submitted, left to generate once, then read tab by tab. Rows it
-cannot finish stay `Pending` with `last_error`, and rerunning takes only those.
+Each batch of up to four rows is one `aside repl` call that opens a tab per
+row, submits and downloads them one at a time, and closes every tab before it
+returns. Rows it cannot finish are retried once in the same run, then stay
+`Failed` with `last_error`; rerunning takes only those.
 Its own rules and failure table live in
 [`gemini-web-image/SKILL.md`](../../gemini-web-image/SKILL.md).
 
