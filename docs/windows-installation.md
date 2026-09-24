@@ -205,6 +205,21 @@ Rows go four at a time. While it runs, the Aside window switches between its tab
 
 > This path was built and measured on macOS. The Windows-specific parts (CLI location, argument passing, UTF-8 output) are covered by the script's tests, but the first real Windows run is yours — if a batch fails, the row's `last_error` in `image_prompts.json` says why.
 
+### 9d — Pin the image path to Gemini web (no paid ChatGPT plan)
+
+The deck workflow's image source defaults to **auto**, which tries the `codex` backend first. On a machine with only a free ChatGPT account that attempt cannot succeed, and its recovery step suggests installing Codex, which is a dead end. Pin the choice for this machine instead: create `CLAUDE.local.md` in the repository root with the content below. Claude Code loads it on every session in this folder, and `.gitignore` keeps it out of the repository.
+
+```markdown
+# 이 PC의 고정 설정
+
+- 이 PC에는 ChatGPT 무료 계정만 있어 Codex로 이미지를 만들 수 없다. Gemini는 유료 구독이 있다.
+- 덱의 AI 이미지 생성 방식(`image_ai_path`)은 항상 `gemini-web`(Gemini 웹 전용)으로 확정한다. 확인 화면의 추천값과 채팅 확인 모두 이 값으로 내고, `auto`나 `codex`를 추천하지 않는다.
+- Codex CLI 설치나 `codex login`을 권하지 않는다.
+- Gemini 웹 경로가 실패하면 `.claude/skills/gemini-web-image/SKILL.md` §7에 따라 실패한 행과 `last_error`를 보고하고, 웹 이미지 검색이나 직접 업로드로 넘긴다.
+```
+
+The confirmation page still shows the image-source field; with this file in place the recommended value is **Gemini web only**, and choosing it by hand has the same effect.
+
 ---
 
 ## Troubleshooting

@@ -7,6 +7,8 @@ venv/
 # Secrets / local env
 .env
 .env.*
+# Per-machine Claude Code instructions (e.g. a pinned image path) — never shared
+CLAUDE.local.md
 
 # Personal project workspace — decks and source material stay local
 projects/*
