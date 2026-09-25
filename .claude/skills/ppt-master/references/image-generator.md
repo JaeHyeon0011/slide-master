@@ -495,7 +495,8 @@ C (AI-generated) resolves through one ladder — two automated engines, then two
    |---|---|
    | `Codex CLI not found` | Print in chat: install `npm install -g @openai/codex`, then `codex login` (ChatGPT OAuth). Ask the user to confirm; on confirmation rerun the same manifest (idempotent — only `Pending` / `Failed` rows re-run). |
    | `Codex CLI not found` **and** no ChatGPT plan | Codex needs a paid plan, so installing it is not a fix. Offer Path A2 when the Aside browser is signed in to Gemini; otherwise go to step 3. |
-   | `Aside CLI not found` or `aside repl returned no result` (Path A2) | Print in chat: install the Aside CLI (`install.sh` on macOS/Linux, `install.ps1` on Windows), open the Aside app, and sign in to Gemini inside the Aside browser. Same confirm-then-rerun. |
+   | `Aside CLI not found` (Path A2) | Print in chat: install the Aside CLI (`install.sh` on macOS/Linux, `install.ps1` on Windows), open the Aside app, and sign in to Gemini inside the Aside browser. Same confirm-then-rerun. |
+   | `aside repl returned no result` (Path A2) | The Aside app is closed, or a call ran past the REPL's 120s limit. Ask the user to open Aside; if it was open, rerun with `--batch 3`. Not a reinstall. |
    | auth / `401` / `login` | Print `codex login` guidance; same confirm-then-rerun. |
    | Transient (network / rate limit) | The CLI already retries once per item; if the run still fails, fall through. |
 
@@ -580,7 +581,9 @@ python3 .claude/skills/gemini-web-image/scripts/gemini_web_image.py \
 
 Each batch of up to four rows is one `aside repl` call that opens a tab per
 row, submits and downloads them one at a time, and closes every tab before it
-returns. Rows it cannot finish are retried once in the same run, then stay
+returns. It is built to run in the background — no step waits on the window
+being painted, so the Aside window may stay covered or minimized (measured on
+macOS; Windows is the design target). Rows it cannot finish are retried once in the same run, then stay
 `Failed` with `last_error`; rerunning takes only those.
 Its own rules and failure table live in
 [`gemini-web-image/SKILL.md`](../../gemini-web-image/SKILL.md).

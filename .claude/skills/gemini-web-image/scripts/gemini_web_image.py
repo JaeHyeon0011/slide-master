@@ -18,7 +18,7 @@ Options:
     --manifest PATH     image_prompts.json to read and write back (required)
     --output, -o DIR    where images land (default: the manifest's folder)
     --batch N           rows per `aside repl` call, one tab each (default 4,
-                        max 4). A batch of four measured 97s against the JS
+                        max 4). A batch of four measured 76-86s against the JS
                         budget of 105s, under the REPL's 120s limit. A row that
                         misses its turn is retried once in the same run.
     --deadline S        hard wall-clock budget for the whole run (default 420).
@@ -100,15 +100,18 @@ def find_aside() -> str:
     candidates = [Path("~/.local/bin/aside").expanduser()]
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
+        # install.ps1 puts each release in CLI\versions\<version>\aside.exe
+        # and points the CLI\current junction (the PATH entry) at the newest.
         base = Path(local_app_data) / "Aside" / "CLI"
-        candidates += [base / "aside.exe", base / "bin" / "aside.exe"]
+        candidates.append(base / "current" / "aside.exe")
+        candidates += sorted(base.glob("versions/*/aside.exe"), reverse=True)
     for path in candidates:
         if path.exists():
             return str(path)
     return ""
 
 
-def with_ratio(prompt: str, ratio: str) -> str:
+def with_ratio(prompt: str, ratio: str, quiet: bool = False) -> str:
     """Put the ratio line in front of the prompt, once.
 
     Manifests have turned up with the line already there, and prepending it
@@ -121,7 +124,7 @@ def with_ratio(prompt: str, ratio: str) -> str:
     # A prompt carrying a *different* ratio is a manifest error, not something
     # to paper over: the two sentences would contradict each other on the page.
     stale = RATIO_LINE_RE.match(prompt.lstrip())
-    if stale and stale.group(1) != ratio:
+    if stale and stale.group(1) != ratio and not quiet:
         log(f"  ** prompt opens with a {stale.group(1)} ratio line but the row "
             f"asks for {ratio}; sending the row's ratio in front of it")
     return lead + prompt
@@ -161,18 +164,29 @@ def image_size(raw: bytes) -> tuple:
 # Every rule in here is a failure that already happened (see SKILL.md §4):
 # - Tabs come from openTab(). A tab opened with `aside "<url>"` cannot be closed
 #   from the REPL — closeTab() reports success and the tab stays.
-# - The prompt goes in with keyboard.insertText(). fill() is rejected by the
-#   contenteditable box, and pressSequentially() runs past 120s at 700 chars.
-# - A tab must be in front to take input and to download its own result. With
-#   submissions in the background only 1 of 4 went through; with downloads in
-#   the background two tabs saved the same file. So both steps are serial and
-#   each brings its tab to the front first.
+# - Nothing waits on the window being painted, and nothing brings a tab or the
+#   window forward. On Windows a covered or minimized browser window is marked
+#   occluded and stops painting (Chromium's native window occlusion, a
+#   Windows-only feature): the finished image never decodes and Playwright's
+#   click() and waitFor('visible') wait for frames that never come. So the box
+#   is awaited as 'attached', a row is ready when its download button exists,
+#   and every click is a DOM click. Aside reports every tab visible and focused,
+#   and text typed into a background tab after a DOM focus lands in full.
+# - The prompt goes in with keyboard.insertText(), falling back to
+#   execCommand('insertText'). fill() is rejected by the contenteditable box,
+#   pressSequentially() runs past 120s at 700 chars, and a synthetic paste
+#   event is ignored.
+# - Downloads run one at a time and each is read from its own download.path().
+#   download.saveAs() handed back the previous download's file for every second
+#   row. Concurrent downloads were worse: every waiting tab received the first
+#   tab's download. Gemini names each file after its image, so a download whose
+#   name was already seen in this batch is someone else's and is skipped.
 # - Elements are found by structure, not by accessible name, so the page's UI
 #   language does not matter: the prompt box is the editor inside
-#   <rich-textarea>, and the download button is the one whose icon is named
-#   "download".
+#   <rich-textarea>, and the buttons are identified by their icon names.
 _BATCH_JS = r"""
 const JOBS = __JOBS__;
+const seenNames = __SEEN__;     // download names already saved by earlier batches
 const BUDGET_MS = __BUDGET__ * 1000;
 const URL0 = __URL__;
 const BOX = 'rich-textarea .ql-editor, rich-textarea [contenteditable="true"]';
@@ -181,33 +195,48 @@ const left = function(){ return BUDGET_MS - (Date.now() - t0); };
 const rows = {};
 const open = [];
 
-const front = async function(p){ try { await p.bringToFront(); } catch (e) {} };
+// Resolve to `fallback` instead of outliving the batch budget.
+const within = function(promise, ms, fallback){
+  return Promise.race([promise, new Promise(function(res){
+    setTimeout(function(){ res(fallback); }, Math.max(0, ms)); })]);
+};
 const probe = function(p){
   return p.evaluate(function(){
     return { url: location.href,
              text: (document.body ? document.body.innerText : '').slice(0, 600) };
   }).catch(function(){ return { url: '', text: '' }; });
 };
+const typedLength = function(p){
+  return p.evaluate(function(sel){
+    const el = document.querySelector(sel);
+    return el ? (el.innerText || '').trim().length : 0;
+  }, BOX).catch(function(){ return 0; });
+};
 // The answer has started once a response element exists or the URL has moved to
-// a conversation. A click that "worked" with neither is a dropped send.
+// a conversation. A send that "worked" with neither was dropped.
 const started = function(p){
   return p.evaluate(function(){
     return !!document.querySelector('model-response') || /\/app\/[0-9a-f]+/.test(location.href);
   }).catch(function(){ return false; });
 };
+// Ready means the response carries its download button. The image itself is no
+// signal: in a window that is not painting it never decodes.
 const ready = function(p){
   return p.evaluate(function(){
     const rs = document.querySelectorAll('model-response');
     const r = rs[rs.length - 1];
     if (!r) return null;
-    const im = Array.from(r.querySelectorAll('img')).find(function(x){
-      return x.naturalWidth > 400 && x.naturalHeight > 200; });
-    if (!im) return null;
+    const hasDl = Array.from(r.querySelectorAll('button mat-icon')).some(function(ic){
+      return (ic.getAttribute('fonticon') || ic.getAttribute('data-mat-icon-name') ||
+              ic.textContent || '').trim() === 'download'; });
+    if (!hasDl) return null;
     const m = location.href.match(/\/app\/([0-9a-f]+)/);
-    return { w: im.naturalWidth, h: im.naturalHeight, convo: m ? m[1] : null };
+    return { convo: m ? m[1] : null };
   }).catch(function(){ return null; });
 };
-const markButton = function(p, icon){
+// Click the button whose icon is `icon`, inside the last response for
+// 'download' or anywhere for 'send'. A DOM click needs no painted frame.
+const clickIcon = function(p, icon){
   return p.evaluate(function(name){
     const rs = document.querySelectorAll(name === 'send' ? 'body' : 'model-response');
     const scope = rs[rs.length - 1];
@@ -220,42 +249,92 @@ const markButton = function(p, icon){
       return n === name || (name === 'send' && n === 'arrow_upward');
     });
     if (!b) return false;
-    document.querySelectorAll('[data-ppt-mark]').forEach(function(x){
-      x.removeAttribute('data-ppt-mark'); });
-    b.setAttribute('data-ppt-mark', name);
+    b.click();
     return true;
   }, icon).catch(function(){ return false; });
 };
+let lost = false;               // a download went missing; attribution is no longer safe
+const download = async function(o){
+  const td = Date.now();
+  try {
+    const wait = function(){
+      return o.p.waitForEvent('download',
+        { timeout: Math.max(3000, Math.min(30000, left() - 6000)) });
+    };
+    // Aside hands a download to its window's active tab: clicked in a
+    // background tab, the tab's own waiter saw nothing and a later waiter got
+    // it. Activating the tab routes the download to it. This switches tabs
+    // inside the Aside window only; a minimized or covered window stays put.
+    try { await o.p.bringToFront(); } catch (e) {}
+    await sleep(400);
+    const dlP = wait();
+    dlP.catch(function(){});
+    if (!(await clickIcon(o.p, 'download'))) throw new Error('download button not found');
+    let dl;
+    try { dl = await dlP; }
+    catch (e) {
+      // A download that arrives after its waiter gave up goes to the next
+      // waiter, which would save it as its own. Stop downloading in this call.
+      lost = true;
+      throw new Error('no download arrived: ' + String(e && e.message || e).slice(0, 120));
+    }
+    // Gemini names each file after its image; a name seen earlier in this batch
+    // is another row's download handed over again. The retry pass redoes it.
+    if (seenNames.indexOf(dl.suggestedFilename()) >= 0)
+      throw new Error('received another row\'s download (' + dl.suggestedFilename() + ')');
+    seenNames.push(dl.suggestedFilename());
+    const dlPath = await within(dl.path(), left() - 4000, null);
+    if (!dlPath) throw new Error('download did not finish inside the batch budget');
+    const buf = await fs.readFile(dlPath);
+    await fs.writeFile('artifacts/' + o.job.out, buf);
+    o.r.ok = true;
+    o.r.bytes = buf.length;
+    o.r.name = dl.suggestedFilename();
+    o.r.T.download_ms = Date.now() - td;
+    // A click made while the previous download is still settling is dropped
+    // and its waiter handed the previous download again; this pause stopped it.
+    await sleep(1500);
+  } catch (e) {
+    o.r.kind = 'download';
+    o.r.error = String(e && e.message || e).slice(0, 200);
+  }
+  try { await closeTab(o.p); o.closed = true; } catch (e) {}
+};
 
 try {
-  // ── submit, one tab at a time ────────────────────────────────────
+  // ── submit, one tab after another, none brought forward ─────────
   for (const job of JOBS) {
     const r = { T: {} };
     rows[job.out] = r;
     if (left() < 60000) { r.kind = 'no_time'; continue; }
+    try {
     const ts = Date.now();
     let p = null;
     try { p = await openTab(URL0); }
     catch (e) { r.kind = 'open'; r.error = String(e && e.message || e); continue; }
     open.push({ job: job, p: p, r: r });
-    await front(p);
-    const box = p.locator(BOX).first();
-    try { await box.waitFor({ state: 'visible', timeout: 25000 }); }
+    try { await p.locator(BOX).first().waitFor({ state: 'attached', timeout: 25000 }); }
     catch (e) { r.kind = 'no_box'; r.probe = await probe(p); continue; }
-    await box.click();
+    await sleep(800);
+    await p.evaluate(function(sel){
+      const el = document.querySelector(sel);
+      if (el) { el.click(); el.focus(); }
+    }, BOX);
     await p.keyboard.insertText(job.prompt);
+    if ((await typedLength(p)) < 10) {
+      await p.evaluate(function(arg){
+        const el = document.querySelector(arg.sel);
+        if (el) { el.focus(); document.execCommand('insertText', false, arg.text); }
+      }, { sel: BOX, text: job.prompt });
+    }
+    if ((await typedLength(p)) < 10) { r.kind = 'not_typed'; r.probe = await probe(p); continue; }
 
     let ok = false;
     for (const way of ['enter', 'button']) {
       if (ok || left() < 45000) break;
       try {
-        if (way === 'enter') {
-          await p.keyboard.press('Enter');
-        } else {
-          await front(p);
-          if (!(await markButton(p, 'send'))) continue;
-          await p.locator('[data-ppt-mark="send"]').first().click();
-        }
+        if (way === 'enter') await p.keyboard.press('Enter');
+        else if (!(await clickIcon(p, 'send'))) continue;
       } catch (e) { continue; }
       for (let k = 0; k < 20 && !ok; k++) { await sleep(500); ok = await started(p); }
     }
@@ -264,66 +343,52 @@ try {
     r.T.submit_ms = Date.now() - ts;
     // A human does not send four prompts on a metronome.
     await sleep(700 + Math.floor(Math.random() * 1300));
+    } catch (e) {
+      // One row's failure must not end the batch or erase why it failed.
+      r.kind = 'exception';
+      r.error = String(e && e.message || e).slice(0, 200);
+    }
   }
 
-  // ── wait, and download each one as it finishes ───────────────────
+  // ── wait; download each row, one at a time, as it becomes ready ──
   const tw = Date.now();
-  let waiting = open.filter(function(o){ return o.r.sent; });
   await fs.mkdir('./artifacts', { recursive: true });
-  // An original takes 11-17s from click to file. A download started with less
-  // than DL_MIN left would carry the call past the REPL's 120s limit, so the
-  // row is handed back for a retry instead.
+  let waiting = open.filter(function(o){ return o.r.sent; });
+  // An original takes 11-17s from click to file; one started later than this
+  // would not finish inside the budget.
   const DL_MIN = 22000;
-  while (waiting.length && left() > DL_MIN) {
+  while (waiting.length && left() > DL_MIN && !lost) {
     const still = [];
     for (const o of waiting) {
-      if (left() < DL_MIN) { still.push(o); continue; }
+      if (left() < DL_MIN || lost) { still.push(o); continue; }
       const hit = await ready(o.p);
       if (!hit) { still.push(o); continue; }
       o.r.T.wait_ms = Date.now() - tw;
       o.r.convo = hit.convo;
-      o.r.shown = [hit.w, hit.h];
-      const td = Date.now();
-      try {
-        await front(o.p);
-        await sleep(600);
-        try { await o.p.locator('model-response img').last().hover(); } catch (e) {}
-        if (!(await markButton(o.p, 'download'))) throw new Error('download button not found');
-        const dlP = o.p.waitForEvent('download',
-          { timeout: Math.max(5000, Math.min(30000, left() - 4000)) });
-        await o.p.locator('[data-ppt-mark="download"]').first().click();
-        const dl = await dlP;
-        await dl.saveAs(o.job.out);                 // lands in ./artifacts/
-        const st = await fs.stat('artifacts/' + o.job.out);
-        o.r.ok = true;
-        o.r.bytes = st.size;
-        o.r.T.download_ms = Date.now() - td;
-      } catch (e) {
-        o.r.kind = 'download';
-        o.r.error = String(e && e.message || e).slice(0, 200);
-      }
+      await download(o);
     }
     waiting = still;
     if (waiting.length) await sleep(1000);
   }
   for (const o of waiting) {
-    o.r.kind = (await ready(o.p)) ? 'no_time' : 'no_image';
+    o.r.kind = lost ? 'after_lost' : ((await ready(o.p)) ? 'no_time' : 'no_image');
     o.r.probe = await probe(o.p);
   }
 } catch (e) {
   rows.__batch__ = { kind: 'exception', error: String(e && e.message || e) };
 } finally {
   // Every tab this call opened is closed here, including on failure.
-  for (const o of open) { try { await closeTab(o.p); } catch (e) {} }
+  for (const o of open) { if (!o.closed) { try { await closeTab(o.p); } catch (e) {} } }
 }
 console.log('ASIDE_RESULT ' + JSON.stringify({ dir: pwd, rows: rows, ms: Date.now() - t0 }));
 """
 
 
-def build_batch_js(jobs: list, budget: int = BUDGET) -> str:
+def build_batch_js(jobs: list, budget: int = BUDGET, seen_names=()) -> str:
     """jobs: [{"out": <file name in the session's artifacts/>, "prompt": ...}]"""
     return (_BATCH_JS
             .replace("__JOBS__", json.dumps(jobs, ensure_ascii=False))
+            .replace("__SEEN__", json.dumps(list(seen_names)))
             .replace("__BUDGET__", str(int(budget)))
             .replace("__URL__", json.dumps(IMAGES_URL)))
 
@@ -343,11 +408,12 @@ def run_js(aside: str, js: str) -> str:
     return (proc.stdout or "") + (proc.stderr or "")
 
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 _RESULT_RE = re.compile(r"^ASIDE_RESULT (\{.*\})\s*$", re.M)
 
 
 def parse_result(out: str):
-    match = _RESULT_RE.search(out or "")
+    match = _RESULT_RE.search(_ANSI_RE.sub("", out or ""))
     if not match:
         return None
     try:
@@ -371,9 +437,13 @@ def plan_batches(items: list, size: int) -> list:
     batches, current = [], []
     for item in items:
         trial = current + [item]
-        js = build_batch_js([{"out": f"row{i}.png", "prompt": with_ratio(it["prompt"], it["aspect_ratio"])}
+        js = build_batch_js([{"out": f"row{i}.png",
+                              "prompt": with_ratio(it["prompt"], it["aspect_ratio"], quiet=True)}
                              for i, it in enumerate(trial)])
-        if current and (len(trial) > size or len(js) > ARG_LIMIT):
+        # Measured as Windows will see it: quoting doubles backslashes and
+        # escapes every double quote in the JS.
+        cmdline = subprocess.list2cmdline(["aside", "repl", js])
+        if current and (len(trial) > size or len(cmdline) > ARG_LIMIT):
             batches.append(current)
             current = [item]
         else:
@@ -390,11 +460,18 @@ def describe_failure(row: dict) -> str:
         return f"gemini-web: prompt box never appeared at {url or 'the page'}"
     if kind == "not_sent":
         return "gemini-web: prompt typed but the answer never started"
+    if kind == "not_typed":
+        return "gemini-web: the prompt box did not take the typed text"
     if kind == "no_image":
         text = " ".join(((row.get("probe") or {}).get("text") or "").split())[-160:]
         return f"gemini-web: no image inside the batch budget; page ends with: {text}"
     if kind == "download":
         return f"gemini-web: image shown but the download failed ({row.get('error')})"
+    if kind == "after_lost":
+        return ("gemini-web: not downloaded — an earlier download in the batch went "
+                "missing, so later ones could not be attributed safely")
+    if kind == "exception":
+        return f"gemini-web: the page raised an error: {row.get('error')}"
     if kind == "no_time":
         return ("gemini-web: the batch's 105s budget ran out before this row's "
                 "turn to send or download")
@@ -407,7 +484,7 @@ def save_manifest(manifest: dict, path: Path) -> None:
 
 
 def run_batch(aside: str, batch: list, manifest: dict, manifest_path: Path,
-              out_dir: Path, seen: dict, previews: list) -> tuple:
+              out_dir: Path, seen: dict, previews: list, names=None) -> tuple:
     """Run one batch and write each row's outcome back at once.
 
     Returns (saved, blocked_url, failed). blocked_url is set when the page was
@@ -416,10 +493,12 @@ def run_batch(aside: str, batch: list, manifest: dict, manifest_path: Path,
     jobs = [{"out": f"row{i}.png", "prompt": with_ratio(it["prompt"], it["aspect_ratio"])}
             for i, it in enumerate(batch)]
     started = time.time()
-    out = run_js(aside, build_batch_js(jobs))
+    names = [] if names is None else names
+    out = run_js(aside, build_batch_js(jobs, seen_names=names))
     result = parse_result(out)
     if not result:
-        why = first_error(out) or out.strip()[:200] or "no output"
+        why = (first_error(out) or out.strip()[:200]
+               or f"no output within {REPL_LIMIT + 30}s — the call hung")
         if "isn't running" in why:
             why += (" — either the Aside app is closed, or the call ran past the "
                     "REPL's 120s limit")
@@ -431,12 +510,15 @@ def run_batch(aside: str, batch: list, manifest: dict, manifest_path: Path,
         return 0, "", list(batch)
 
     rows = result.get("rows") or {}
-    if "__batch__" in rows:
-        log(f"  batch raised: {rows['__batch__'].get('error')}")
+    batch_error = (rows.get("__batch__") or {}).get("error")
+    if batch_error:
+        log(f"  batch raised: {batch_error}")
     session_dir = Path(result.get("dir") or "")
     saved, blocked, failed = 0, "", []
     for job, item in zip(jobs, batch):
-        row = rows.get(job["out"]) or {"kind": "missing"}
+        row = rows.get(job["out"]) or (
+            {"kind": "exception", "error": batch_error} if batch_error
+            else {"kind": "missing"})
         url = (row.get("probe") or {}).get("url", "")
         if CHALLENGE_RE.search(url):
             blocked = url
@@ -479,7 +561,18 @@ def run_batch(aside: str, batch: list, manifest: dict, manifest_path: Path,
         if not target:
             note = f"  ** aspect_ratio {item['aspect_ratio']!r} is not W:H — ratio unchecked"
         elif abs(actual - target) / target > RATIO_TOLERANCE:
-            note = "  ** ratio off, review this row"
+            # Gemini has held the asked ratio to within 0.1% on every measured
+            # row, so a wrong ratio almost always means another row's image —
+            # exactly what a download picked up from the wrong tab looked like.
+            dest.unlink(missing_ok=True)
+            del seen[digest]
+            item["status"] = "Failed"
+            item["last_error"] = (f"gemini-web: saved {width}x{height} but the row "
+                                  f"asks for {item['aspect_ratio']} — likely another "
+                                  "row's image; resubmit")
+            failed.append(item)
+            log(f"  ** {item['filename']}: {item['last_error']}")
+            continue
         else:
             note = ""
         if max(width, height) <= PREVIEW_EDGE:
@@ -492,6 +585,8 @@ def run_batch(aside: str, batch: list, manifest: dict, manifest_path: Path,
             f"download {timing.get('download_ms', 0) / 1000:.1f}s]{note}")
         item["status"] = "Generated"
         item.pop("last_error", None)
+        if row.get("name"):
+            names.append(row["name"])
         saved += 1
         save_manifest(manifest, manifest_path)
 
@@ -502,6 +597,14 @@ def run_batch(aside: str, batch: list, manifest: dict, manifest_path: Path,
 
 
 def main() -> None:
+    # A Windows console or pipe defaults to the ANSI code page, and printing a
+    # Korean prompt or error there raised UnicodeEncodeError before the
+    # manifest was written back.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     parser = argparse.ArgumentParser(
         description="Generate an image manifest through the Gemini web app in Aside."
     )
@@ -542,7 +645,7 @@ def main() -> None:
 
     batches = plan_batches(pending, size)
     log(f"{len(pending)} row(s) in {len(batches)} batch(es) of up to {size}; "
-        "the Aside window will switch tabs while it submits and downloads")
+        "the Aside window can stay covered or minimized while it runs")
 
     # Seed with files already on disk so a rerun cannot save a duplicate of a
     # row that finished earlier.
@@ -552,10 +655,10 @@ def main() -> None:
         if item["status"] == "Generated" and path.exists():
             seen[hashlib.sha256(path.read_bytes()).hexdigest()] = item["filename"]
 
-    saved, previews, blocked = 0, [], ""
-    # One retry pass, inside the same run. A batch of four measured 97s against
-    # a 105s budget, so on a slow day its last row can miss its turn; sending it
-    # again in the next batch is cheaper than making the caller rerun.
+    saved, previews, blocked, names = 0, [], "", []
+    # One retry pass, inside the same run. A batch of four measured 76-86s
+    # against a 105s budget, so on a slow day its last row can miss its turn;
+    # sending it again in the next batch is cheaper than making the caller rerun.
     queue = [(batch, False) for batch in batches]
     retry = []
     while queue and not blocked:
@@ -567,7 +670,7 @@ def main() -> None:
         label = "retry" if is_retry else "batch"
         log(f"{label}: " + ", ".join(it["filename"] for it in batch))
         got, blocked, failed = run_batch(aside, batch, manifest, manifest_path,
-                                         out_dir, seen, previews)
+                                         out_dir, seen, previews, names)
         saved += got
         if not is_retry:
             retry += failed

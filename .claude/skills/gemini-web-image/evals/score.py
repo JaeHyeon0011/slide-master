@@ -103,13 +103,16 @@ def c1_runs_script(text, sid):
     return bool(re.search(r"gemini_web_image\.py\s+(?:\\\s*)?--manifest", flatten(text)))
 
 
-def c2_warns_tab_switching(text, sid):
-    # The Aside window moves on every send and download. A user who is not told
-    # clicks into it mid-run.
+def c2_says_user_can_keep_working(text, sid):
+    # The run is built to survive a covered or minimized Aside window. A user
+    # who is told to keep the window in front loses the point of it.
     if sid != "S1":
         return None
-    return any_line(text, r"(switch|jump|flip|come to the front|brought? (?:to the )?front|앞으로|전환).{0,60}"
-                          r"(tab|window|탭|창)|(tab|window|탭|창).{0,60}(switch|front|전환|앞으로)")
+    flat = " ".join(logical_lines(text))
+    tells = re.search(r"(cover|minimi[sz]|background|keep working|other work|다른 작업|최소화|가려)", flat, re.I)
+    wrong = any(re.search(r"(keep|leave).{0,40}(aside|window).{0,40}(front|foreground|visible|maximi)", ln, re.I)
+                and not negated(ln) for ln in contextual_lines(text))
+    return bool(tells) and not wrong
 
 
 def c3_verifies_output(text, sid):
@@ -163,8 +166,11 @@ def c7_reads_repl_limit(text, sid):
     flat = flatten(text)
     knows = re.search(r"120\s?s|120[- ]second", flat, re.I)
     acts = re.search(r"--batch|smaller batch|lower .{0,20}batch|batch .{0,20}(2|two|3|three)", flat, re.I)
+    # A blockquote line is the plan quoting the skill, whose own wording is
+    # "Do not reinstall Aside for this" — often split across quote lines.
     reinstall = any(re.search(r"reinstall|install\.sh|install\.ps1|restart (?:the )?aside", ln, re.I)
-                    and not negated(ln) for ln in contextual_lines(text))
+                    and not negated(ln) and not re.match(r"\s*>", ln)
+                    for ln in contextual_lines(text))
     return bool(knows) and bool(acts) and not reinstall
 
 
@@ -184,20 +190,21 @@ def c8_challenge_by_hand(text, sid):
     return bool(hands_off) and bool(reruns) and not solves
 
 
-def c9_keeps_focus_rule(text, sid):
+def c9_keeps_download_activation(text, sid):
+    # Aside hands a download to its window's active tab; downloading from a
+    # background tab gave rows each other's files. The plan must keep the one
+    # tab activation, say why, and say it does not raise the window.
     if sid != "S7":
         return None
     flat = " ".join(logical_lines(text))
-    explains = re.search(r"(background).{0,160}(1 of 4|one of four|same file|same (?:image|result|checksum)|wrong|another tab|didn't|did not|doesn't|does not)", flat, re.I) \
-        or re.search(r"(front|focus).{0,160}(both|send .{0,20}download|submit .{0,20}download)", flat, re.I)
-    # Restating the user's request, asking it as a heading, or quoting the rule
-    # that brings tabs forward is not agreeing to it.
-    complies = any(re.search(r"(submit|send|download).{0,40}background", ln, re.I)
+    explains = re.search(r"(active tab|activat|bringToFront).{0,200}(download|another row|wrong|same file|previous|waiter|routes?)", flat, re.I) \
+        or re.search(r"download.{0,200}(active tab|activat)", flat, re.I)
+    # Headings name the request; they do not agree to it.
+    complies = any(re.search(r"(download).{0,60}(without activat|background tab|not activat)", ln, re.I)
                    and not negated(ln)
                    and not ln.rstrip().endswith("?")
-                   and not re.search(r"\b(forward|front)\b", ln, re.I)
-                   and not re.search(r"1 of 4|same|wrong|fail|broke|why|because"
-                                     r"|user (?:says|asks)|they ask|ask(?:s|ed)? to|request", ln, re.I)
+                   and not re.match(r"\s*#", ln)
+                   and not re.search(r"user (?:says|asks)|they ask|ask(?:s|ed)? to|request|because|wrong|another row|previous|fail", ln, re.I)
                    for ln in contextual_lines(text))
     return bool(explains) and not complies
 
@@ -219,14 +226,14 @@ def c10_no_cli_tabs(text, sid):
 
 BINARY = [
     ("C1_runs_script", c1_runs_script),
-    ("C2_warns_tab_switching", c2_warns_tab_switching),
+    ("C2_says_user_can_keep_working", c2_says_user_can_keep_working),
     ("C3_verifies_output", c3_verifies_output),
     ("C4_leaves_finished_and_manual_rows", c4_leaves_finished_and_manual_rows),
     ("C5_precondition_stop", c5_precondition_stop),
     ("C6_no_double_ratio", c6_no_double_ratio),
     ("C7_reads_repl_limit", c7_reads_repl_limit),
     ("C8_challenge_by_hand", c8_challenge_by_hand),
-    ("C9_keeps_focus_rule", c9_keeps_focus_rule),
+    ("C9_keeps_download_activation", c9_keeps_download_activation),
     ("C10_no_cli_tabs", c10_no_cli_tabs),
 ]
 

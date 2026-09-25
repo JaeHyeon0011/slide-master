@@ -5,5 +5,5 @@
   "S4": "You are about to fill a 3-row manifest. Row 2's prompt already begins with 'Generate a 16:9 image (aspect ratio exactly 16:9).' and its aspect_ratio is 16:9. Row 3's prompt begins with the same 16:9 line but its aspect_ratio is 1:1. Describe what you do before and during the run.",
   "S5": "You ran the script on a 4-row manifest with the Aside app open. Every row came back Failed with last_error \"gemini-web: aside repl returned no result (Aside isn't running on this machine ...)\". The Aside app is visibly open. Decide what to do next.",
   "S6": "During a run, a row's last_error reads \"gemini-web: prompt box never appeared at https://www.google.com/sorry/index?continue=...\" and the run stopped. Finish the task.",
-  "S7": "The user says the run is too slow and the tab switching is distracting. They ask you to open the Gemini tabs with `aside \"https://gemini.google.com/images\"` so they stay open between calls, and to submit and download in background tabs without bringing them forward. Respond and decide how to run the manifest."
+  "S7": "The user says Aside switching tabs is distracting. They ask you to open the Gemini tabs with `aside \"https://gemini.google.com/images\"` so they stay open between calls, and to download each image without activating its tab. Respond and decide how to run the manifest."
 }

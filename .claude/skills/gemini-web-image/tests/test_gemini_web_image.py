@@ -31,6 +31,8 @@ def png(width, height, salt=b""):
 class BatchScript(unittest.TestCase):
     def setUp(self):
         self.js = gwi.build_batch_js([{"out": "row0.png", "prompt": "a cat"}])
+        self.submit = self.js[self.js.index("── submit"):self.js.index("── wait")]
+        self.download = self.js[self.js.index("const download = "):self.js.index("try {\n  // ── submit")]
 
     def test_tabs_come_from_open_tab_and_close_in_finally(self):
         # `aside "<url>"` tabs cannot be closed from the REPL; openTab() tabs can.
@@ -44,21 +46,56 @@ class BatchScript(unittest.TestCase):
 
     def test_prompt_is_inserted_not_filled(self):
         self.assertIn("keyboard.insertText(job.prompt)", self.js)
+        self.assertIn("execCommand('insertText'", self.js)
         self.assertNotIn(".fill(", self.js)
         self.assertNotIn("pressSequentially", self.js)
 
-    def test_both_submit_and_download_bring_the_tab_forward(self):
-        submit = self.js[self.js.index("── submit"):self.js.index("── wait")]
-        download = self.js[self.js.index("── wait"):self.js.index("} finally {")]
-        self.assertIn("await front(p)", submit)
-        self.assertIn("await front(o.p)", download)
+    def test_submission_never_brings_a_tab_forward(self):
+        # A covered or minimized window must stay where the user left it.
+        self.assertNotIn("bringToFront", self.submit)
 
-    def test_selectors_do_not_depend_on_ui_language(self):
-        self.assertIn("rich-textarea", self.js)
-        self.assertIn("'download'", self.js)
-        self.assertNotIn("aria-label", self.js)
-        self.assertFalse(any("가" <= ch <= "힣" for ch in self.js),
-                         "Korean text in the batch script ties it to one UI language")
+    def test_only_the_download_activates_its_tab(self):
+        # Aside routes a download to the window's active tab.
+        self.assertIn("bringToFront", self.download)
+        self.assertEqual(self.js.count("bringToFront"), 1)
+
+    def test_nothing_waits_on_the_window_being_painted(self):
+        # An occluded window stops painting: the image never decodes and
+        # Playwright's actionability checks never pass. Readiness is the
+        # download button, and every click is a DOM click.
+        self.assertNotIn("naturalWidth", self.js)
+        self.assertNotIn(".hover(", self.js)
+        self.assertNotIn("state: 'visible'", self.js)
+        self.assertNotRegex(self.js, r"locator\([^)]*\)(?:\.first\(\))?\.click\(")
+        self.assertIn("clickIcon(o.p, 'download')", self.download)
+
+    def test_downloads_are_read_from_their_own_path_one_at_a_time(self):
+        # saveAs() handed back the previous download; concurrent downloads all
+        # received the first tab's file.
+        self.assertIn("dl.path()", self.download)
+        self.assertNotIn("saveAs", self.js)
+        self.assertIn("await download(o)", self.js)
+        self.assertNotIn("Promise.all", self.js)
+
+    def test_a_download_named_like_an_earlier_one_is_rejected(self):
+        self.assertIn("seenNames.indexOf(dl.suggestedFilename())", self.download)
+        self.assertIn("seenNames.push(dl.suggestedFilename())", self.download)
+
+    def test_a_lost_download_stops_the_rest_of_the_batch(self):
+        # A download that arrives after its waiter gave up goes to the next
+        # waiter, which would save it as its own.
+        self.assertIn("lost = true", self.download)
+        self.assertIn("!lost", self.js)
+        self.assertIn("'after_lost'", self.js)
+
+    def test_names_saved_by_earlier_batches_are_carried_in(self):
+        js = gwi.build_batch_js([{"out": "row0.png", "prompt": "p"}],
+                                seen_names=["Gemini_Generated_Image_abc.png"])
+        self.assertIn('const seenNames = ["Gemini_Generated_Image_abc.png"];', js)
+
+    def test_downloads_are_spaced_apart(self):
+        # Back-to-back clicks: the second was dropped and handed the first's file.
+        self.assertIn("await sleep(1500)", self.download)
 
     def test_a_download_is_not_started_without_time_to_finish(self):
         self.assertIn("left() < DL_MIN", self.js)
@@ -66,6 +103,16 @@ class BatchScript(unittest.TestCase):
     def test_sending_needs_proof_the_answer_started(self):
         self.assertIn("ok = await started(p)", self.js)
         self.assertIn("r.kind = 'not_sent'", self.js)
+
+    def test_one_row_failing_does_not_end_the_batch(self):
+        self.assertIn("r.kind = 'exception'", self.submit)
+
+    def test_selectors_do_not_depend_on_ui_language(self):
+        self.assertIn("rich-textarea", self.js)
+        self.assertIn("'download'", self.js)
+        self.assertNotIn("aria-label", self.js)
+        self.assertFalse(any("\uac00" <= ch <= "\ud7a3" for ch in self.js),
+                         "Korean text in the batch script ties it to one UI language")
 
     def test_prompt_text_survives_as_a_json_literal(self):
         tricky = 'quote " backslash \\ 한글 `tick` ${x}'
@@ -112,6 +159,10 @@ class Output(unittest.TestCase):
         self.assertEqual(gwi.parse_result(out)["dir"], "/s")
         self.assertIsNone(gwi.parse_result("nothing here"))
 
+    def test_color_codes_do_not_hide_the_result(self):
+        out = '\x1b[2mASIDE_RESULT {"dir": "/s", "rows": {}}\x1b[0m'
+        self.assertEqual(gwi.parse_result(out)["dir"], "/s")
+
     def test_first_error_strips_color(self):
         out = "\x1b[31mError: boom\x1b[0m\n  at x"
         self.assertEqual(gwi.first_error(out), "Error: boom")
@@ -123,8 +174,10 @@ class Output(unittest.TestCase):
 
 class FindAside(unittest.TestCase):
     def test_windows_install_location(self):
+        # install.ps1: %LOCALAPPDATA%\\Aside\\CLI\\current\\aside.exe (a junction
+        # to versions\\<v>) is what goes on PATH.
         with tempfile.TemporaryDirectory() as tmp:
-            exe = Path(tmp) / "Aside" / "CLI" / "aside.exe"
+            exe = Path(tmp) / "Aside" / "CLI" / "current" / "aside.exe"
             exe.parent.mkdir(parents=True)
             exe.write_bytes(b"")
             with mock.patch.object(gwi.shutil, "which", return_value=None), \
@@ -132,6 +185,19 @@ class FindAside(unittest.TestCase):
                     mock.patch.object(gwi.Path, "expanduser",
                                       return_value=Path(tmp) / "missing"):
                 self.assertEqual(gwi.find_aside(), str(exe))
+
+    def test_windows_version_folder_when_current_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "Aside" / "CLI" / "versions"
+            for version in ("1.26.900.1", "1.26.916.1741"):
+                (base / version).mkdir(parents=True)
+                (base / version / "aside.exe").write_bytes(b"")
+            with mock.patch.object(gwi.shutil, "which", return_value=None), \
+                    mock.patch.dict(os.environ, {"LOCALAPPDATA": tmp}), \
+                    mock.patch.object(gwi.Path, "expanduser",
+                                      return_value=Path(tmp) / "missing"):
+                self.assertTrue(gwi.find_aside().endswith(
+                    os.path.join("1.26.916.1741", "aside.exe")))
 
     def test_path_wins(self):
         with mock.patch.object(gwi.shutil, "which", return_value="/usr/bin/aside"):
@@ -211,6 +277,35 @@ class RunBatch(unittest.TestCase):
             {})
         self.assertEqual(saved, 0)
         self.assertIn("/sorry/", blocked)
+
+    def test_saved_download_names_are_collected_for_the_next_batch(self):
+        names = []
+        out = "ASIDE_RESULT " + json.dumps({"dir": str(self.session), "rows": {
+            "row0.png": {"ok": True, "name": "Gemini_Generated_Image_a.png"}}})
+        (self.session / "artifacts" / "row0.png").write_bytes(png(2752, 1536, b"a"))
+        with mock.patch.object(gwi, "run_js", return_value=out), \
+                mock.patch.object(gwi, "log"):
+            gwi.run_batch("aside", self.items, self.manifest, self.manifest_path,
+                          self.out, {}, [], names)
+        self.assertEqual(names, ["Gemini_Generated_Image_a.png"])
+
+    def test_a_wrong_ratio_is_another_rows_image(self):
+        # Every row asks 16:9; a 1:1 file cannot be this row's.
+        (saved, _b, failed), _ = self.run_with({"row0.png": {"ok": True}},
+                                               {"row0.png": png(2048, 2048)})
+        self.assertEqual(saved, 0)
+        self.assertEqual(self.items[0]["status"], "Failed")
+        self.assertIn("likely another row", self.items[0]["last_error"])
+        self.assertFalse((self.out / "a.png").exists())
+
+    def test_a_batch_error_is_kept_on_every_unresolved_row(self):
+        out = "ASIDE_RESULT " + json.dumps({"dir": str(self.session), "rows": {
+            "__batch__": {"kind": "exception", "error": "Target closed"}}})
+        with mock.patch.object(gwi, "run_js", return_value=out), \
+                mock.patch.object(gwi, "log"):
+            gwi.run_batch("aside", self.items, self.manifest, self.manifest_path,
+                          self.out, {}, [])
+        self.assertTrue(all("Target closed" in it["last_error"] for it in self.items))
 
     def test_no_result_marks_every_row_failed(self):
         with mock.patch.object(gwi, "run_js",

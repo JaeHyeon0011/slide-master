@@ -180,7 +180,7 @@ Skip this unless you want AI-generated images **without** a paid ChatGPT plan or
    aside --version
    ```
 
-   The installer puts `aside.exe` under `%LOCALAPPDATA%\Aside\CLI` and adds it to your user PATH. Open a **new** PowerShell window before `aside --version` so the PATH change is picked up. The image script also checks that folder directly, so it finds the CLI even from a shell opened before the install.
+   The installer puts each release in `%LOCALAPPDATA%\Aside\CLI\versions\<version>\aside.exe`, points `%LOCALAPPDATA%\Aside\CLI\current` at the newest one, and adds `current` to your user PATH. Open a **new** PowerShell window before `aside --version` so the PATH change is picked up. The image script also looks in `current` and `versions` directly, so it finds the CLI even from a shell opened before the install.
 
 3. In the **Aside browser** (not Chrome or Edge — Aside keeps its own profile), open `https://gemini.google.com/images` and sign in. The page should show a prompt box.
 
@@ -201,9 +201,13 @@ The agent invokes this for you during a deck run. To drive it by hand:
 python .claude\skills\gemini-web-image\scripts\gemini_web_image.py --manifest projects\<name>\images\image_prompts.json
 ```
 
-Rows go four at a time. While it runs, the Aside window switches between its tabs — every submission and download brings its tab to the front — so leave the window alone until the run prints its summary. Ten images take about four minutes.
+Rows go four at a time; ten images take about three and a half minutes. **It is built so you can keep working while it runs:** the Aside window may be covered by other windows or minimized, and no step waits on the window being painted. Keep the Aside app open. A locked screen has not been tested.
 
-> This path was built and measured on macOS. The Windows-specific parts (CLI location, argument passing, UTF-8 output) are covered by the script's tests, but the first real Windows run is yours — if a batch fails, the row's `last_error` in `image_prompts.json` says why.
+One thing to watch on the first run: before each download the script activates that image's tab inside Aside, which Aside needs to hand the download to the right tab. On macOS this left a hidden Aside hidden. Windows may instead flash Aside's taskbar button or restore the window at each download; if that happens, note it and report it.
+
+Why this matters on Windows in particular: Chromium-based browsers stop painting a window that Windows reports as covered, minimized, on another virtual desktop, or behind a locked screen ([Chromium docs](https://chromium.googlesource.com/chromium/src.git/+/master/docs/windows_native_window_occlusion_tracking.md)). macOS has no such mode, which is the likely reason an earlier version — one that waited on the page being painted — worked on a Mac and stalled on Windows. The current script never waits on painting.
+
+> Measured on macOS with the Aside app hidden (its window confirmed off-screen for the whole run) and visible — ten images in 200s hidden, every image correct — not yet on Windows. The Windows-specific parts (CLI location, argument quoting, UTF-8 output, no waiting on painting) are pinned by contract tests; if a batch fails, the row's `last_error` in `image_prompts.json` says why.
 
 ### 9d — Pin the image path to Gemini web (no paid ChatGPT plan)
 
@@ -218,7 +222,7 @@ The deck workflow's image source defaults to **auto**, which tries the `codex` b
 - Gemini 웹 경로가 실패하면 `.claude/skills/gemini-web-image/SKILL.md` §7에 따라 실패한 행과 `last_error`를 보고하고, 웹 이미지 검색이나 직접 업로드로 넘긴다.
 ```
 
-The confirmation page still shows the image-source field; with this file in place the recommended value is **Gemini web only**, and choosing it by hand has the same effect.
+This is an instruction to Claude Code, not a switch in the confirmation page: the page still shows the image-source field, and with this file in place Claude recommends **Gemini web only** there. Choosing it by hand has the same effect. Claude Code reads the file when a session starts, so restart Claude Code in this folder after creating it.
 
 ---
 
@@ -303,7 +307,7 @@ See [Step 9](#step-9--optional-gemini-web-image-path-aside).
 
 ### Rows fail with "aside repl returned no result (Aside isn't running ...)"
 
-Either the Aside app is closed, or one call ran past the CLI's 120-second limit — the CLI prints the same "isn't running" message for both. If the app is open, rerun with smaller batches:
+Either the Aside app is closed, or one call ran past the CLI's 120-second limit — the CLI prints the same "isn't running" message for both. If the app is open, rerun with smaller batches (do not reinstall Aside for this):
 
 ```powershell
 python .claude\skills\gemini-web-image\scripts\gemini_web_image.py --manifest projects\<name>\images\image_prompts.json --batch 2

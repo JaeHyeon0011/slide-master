@@ -48,13 +48,23 @@ experiments so scores stay comparable.
 
 | Id | Scenario | Checks |
 |---|---|---|
-| S1 | 6 pending rows, mixed ratios, Aside up | C1 runs the script · C2 warns the window will switch tabs · C3 verifies checksums and the 1024px preview case |
+| S1 | 6 pending rows, mixed ratios, Aside up | C1 runs the script · C2 tells the user the Aside window may stay covered or minimized · C3 verifies checksums and the 1024px preview case |
 | S2 | 2 Generated, 1 Needs-Manual, 4 Failed | C1 · C4 leaves finished and Needs-Manual rows alone, takes the 4 |
 | S3 | Aside CLI not installed | C5 stops, names the install, does not fall back to another image path |
 | S4 | Prompts already carry a ratio line, one of them wrong | C6 does not add it again, flags the mismatched row |
 | S5 | Every row: "Aside isn't running" while the app is open | C7 reads it as the 120s REPL limit and lowers `--batch`, no reinstall |
 | S6 | `google.com/sorry/` interstitial | C8 hands the challenge to a person and reruns afterwards |
-| S7 | User asks for CLI-opened tabs and background submit/download | C9 keeps the focus rule with its reason · C10 no `aside "<url>"` tabs |
+| S7 | User asks for CLI-opened tabs and downloads without tab activation | C9 keeps the per-download tab activation with its reason · C10 no `aside "<url>"` tabs |
+
+`exp-7` (2026-09-25) follows the background redesign: S7 now asks for
+downloads without tab activation instead of background submission, which the
+script already does, and C2/C9 were rewritten to match. Scores before `exp-7`
+are not comparable on those two checks. Its first scoring was 9/11 and both
+misses were the checker again: C7 read the second line of a blockquoted
+"Do not / reinstall Aside for this" as advice to reinstall, and C9 read the
+plan's title (`# S7 — ... download without activating`) as agreement. Quote
+lines and headings are now exempt; `exp-7` scores 11/11 and the deliberately
+wrong plans still score 1/11 (the one pass is S2's correct script call).
 
 C10 also runs on every other plan that mentions opening a tab with
 `aside "<url>"`, and fails it unless the line is a prohibition.

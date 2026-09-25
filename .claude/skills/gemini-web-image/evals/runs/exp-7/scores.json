@@ -1,0 +1,91 @@
+{
+  "binary_passes": 11,
+  "binary_applicable": 11,
+  "binary_pass_rate": 1.0,
+  "per_scenario": {
+    "S1": {
+      "C1_runs_script": true,
+      "C2_says_user_can_keep_working": true,
+      "C3_verifies_output": true,
+      "C4_leaves_finished_and_manual_rows": "n/a",
+      "C5_precondition_stop": "n/a",
+      "C6_no_double_ratio": "n/a",
+      "C7_reads_repl_limit": "n/a",
+      "C8_challenge_by_hand": "n/a",
+      "C9_keeps_download_activation": "n/a",
+      "C10_no_cli_tabs": "n/a"
+    },
+    "S2": {
+      "C1_runs_script": true,
+      "C2_says_user_can_keep_working": "n/a",
+      "C3_verifies_output": "n/a",
+      "C4_leaves_finished_and_manual_rows": true,
+      "C5_precondition_stop": "n/a",
+      "C6_no_double_ratio": "n/a",
+      "C7_reads_repl_limit": "n/a",
+      "C8_challenge_by_hand": "n/a",
+      "C9_keeps_download_activation": "n/a",
+      "C10_no_cli_tabs": "n/a"
+    },
+    "S3": {
+      "C1_runs_script": "n/a",
+      "C2_says_user_can_keep_working": "n/a",
+      "C3_verifies_output": "n/a",
+      "C4_leaves_finished_and_manual_rows": "n/a",
+      "C5_precondition_stop": true,
+      "C6_no_double_ratio": "n/a",
+      "C7_reads_repl_limit": "n/a",
+      "C8_challenge_by_hand": "n/a",
+      "C9_keeps_download_activation": "n/a",
+      "C10_no_cli_tabs": "n/a"
+    },
+    "S4": {
+      "C1_runs_script": "n/a",
+      "C2_says_user_can_keep_working": "n/a",
+      "C3_verifies_output": "n/a",
+      "C4_leaves_finished_and_manual_rows": "n/a",
+      "C5_precondition_stop": "n/a",
+      "C6_no_double_ratio": true,
+      "C7_reads_repl_limit": "n/a",
+      "C8_challenge_by_hand": "n/a",
+      "C9_keeps_download_activation": "n/a",
+      "C10_no_cli_tabs": "n/a"
+    },
+    "S5": {
+      "C1_runs_script": "n/a",
+      "C2_says_user_can_keep_working": "n/a",
+      "C3_verifies_output": "n/a",
+      "C4_leaves_finished_and_manual_rows": "n/a",
+      "C5_precondition_stop": "n/a",
+      "C6_no_double_ratio": "n/a",
+      "C7_reads_repl_limit": true,
+      "C8_challenge_by_hand": "n/a",
+      "C9_keeps_download_activation": "n/a",
+      "C10_no_cli_tabs": "n/a"
+    },
+    "S6": {
+      "C1_runs_script": "n/a",
+      "C2_says_user_can_keep_working": "n/a",
+      "C3_verifies_output": "n/a",
+      "C4_leaves_finished_and_manual_rows": "n/a",
+      "C5_precondition_stop": "n/a",
+      "C6_no_double_ratio": "n/a",
+      "C7_reads_repl_limit": "n/a",
+      "C8_challenge_by_hand": true,
+      "C9_keeps_download_activation": "n/a",
+      "C10_no_cli_tabs": "n/a"
+    },
+    "S7": {
+      "C1_runs_script": "n/a",
+      "C2_says_user_can_keep_working": "n/a",
+      "C3_verifies_output": "n/a",
+      "C4_leaves_finished_and_manual_rows": "n/a",
+      "C5_precondition_stop": "n/a",
+      "C6_no_double_ratio": "n/a",
+      "C7_reads_repl_limit": "n/a",
+      "C8_challenge_by_hand": "n/a",
+      "C9_keeps_download_activation": true,
+      "C10_no_cli_tabs": true
+    }
+  }
+}

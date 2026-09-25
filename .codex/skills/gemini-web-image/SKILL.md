@@ -4,9 +4,10 @@ description: >
   Generate an image_prompts.json manifest's ai rows through the Gemini web app,
   driven by the Aside browser (`aside repl`) and the Gemini account it is signed
   in to. Use on a host that has a Gemini subscription but no usable keyless CLI
-  image path — no ChatGPT plan for codex, or codex is unavailable. Works on
-  macOS, Linux, and Windows x64. Do not use when image_gen.py can run a CLI or
-  API backend; those need no browser.
+  image path — no ChatGPT plan for codex, or codex is unavailable. Built to run
+  in the background with the Aside window covered or minimized (measured on
+  macOS with Aside hidden; Windows x64 is the design target). Do not use when
+  image_gen.py can run a CLI or API backend; those need no browser.
 ---
 
 # gemini-web-image (Codex discovery stub)
